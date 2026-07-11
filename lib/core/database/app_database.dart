@@ -7,8 +7,6 @@ import 'package:path_provider/path_provider.dart';
 
 part 'app_database.g.dart';
 
-// ─── Table definitions ────────────────────────────────────────────────────────
-
 class Annotations extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get filePath => text()();
@@ -43,8 +41,6 @@ class ReadingProgress extends Table {
   Set<Column> get primaryKey => {filePath};
 }
 
-// ─── Database ─────────────────────────────────────────────────────────────────
-
 @DriftDatabase(tables: [Annotations, Bookmarks, ReadingProgress])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -78,25 +74,25 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(b) => OrderingTerm(expression: b.pageNumber)]))
           .get();
 
-  Future<bool> isPageBookmarked(String filePath, int page) async {
+  Future<bool> isPageBookmarked(String fp, int page) async {
     final result = await (select(bookmarks)
-          ..where((b) => b.filePath.equals(filePath) & b.pageNumber.equals(page)))
+          ..where((b) => b.filePath.equals(fp) & b.pageNumber.equals(page)))
         .getSingleOrNull();
     return result != null;
   }
 
-  Future<int> toggleBookmark(String filePath, int page, String label) async {
+  Future<int> toggleBookmark(String fp, int page) async {
     final existing = await (select(bookmarks)
-          ..where((b) => b.filePath.equals(filePath) & b.pageNumber.equals(page)))
+          ..where((b) => b.filePath.equals(fp) & b.pageNumber.equals(page)))
         .getSingleOrNull();
     if (existing != null) {
       await (delete(bookmarks)..where((b) => b.id.equals(existing.id))).go();
       return -1;
     } else {
       return into(bookmarks).insert(BookmarksCompanion.insert(
-        filePath: filePath,
+        filePath: fp,
         pageNumber: page,
-        label: Value(label),
+        label: const Value(''),
       ));
     }
   }
@@ -104,13 +100,13 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteBookmark(int id) =>
       (delete(bookmarks)..where((b) => b.id.equals(id))).go();
 
-  Future<ReadingProgressData?> getProgress(String filePath) =>
-      (select(readingProgress)..where((r) => r.filePath.equals(filePath)))
+  Future<ReadingProgressData?> getProgress(String fp) =>
+      (select(readingProgress)..where((r) => r.filePath.equals(fp)))
           .getSingleOrNull();
 
-  Future<void> saveProgress(String filePath, int page, int total, {double offset = 0}) =>
+  Future<void> saveProgress(String fp, int page, int total, {double offset = 0}) =>
       into(readingProgress).insertOnConflictUpdate(ReadingProgressCompanion.insert(
-        filePath: filePath,
+        filePath: fp,
         currentPage: Value(page),
         totalPages: Value(total),
         scrollOffset: Value(offset),

@@ -48,7 +48,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    _pageSize = const Size(595, 842); // A4 default until real size loaded
+    _pageSize = const Size(595, 842);
     _initPdf();
     _restoreProgress();
   }
@@ -110,7 +110,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
 
   Future<void> _toggleBookmark(int page) async {
     final notifier = ref.read(bookmarkNotifierProvider.notifier);
-    final added = await notifier.toggle(widget.filePath, page, 'Halaman $page');
+    final added = await notifier.toggle(widget.filePath, page);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(added ? 'Penanda ditambah' : 'Penanda dialih keluar'),
@@ -148,8 +148,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                     widget.fileName.replaceAll('.pdf', ''),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                   if (totalPages > 0)
                     Text('$currentPage / $totalPages halaman',
@@ -157,7 +156,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                 ],
               ),
               actions: [
-                // In-document search
                 IconButton(
                   icon: const Icon(Icons.search),
                   tooltip: 'Cari dalam PDF',
@@ -165,7 +163,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                       ? () => _openSearch(currentPage, totalPages)
                       : null,
                 ),
-                // Bookmark toggle
                 isBookmarked.when(
                   data: (bookmarked) => IconButton(
                     icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
@@ -173,10 +170,10 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                     color: bookmarked ? colorScheme.primary : null,
                     onPressed: () => _toggleBookmark(currentPage),
                   ),
-                  loading: () => const IconButton(onPressed: null, icon: Icon(Icons.bookmark_border)),
+                  loading: () => const IconButton(
+                      onPressed: null, icon: Icon(Icons.bookmark_border)),
                   error: (_, __) => const SizedBox(),
                 ),
-                // Text reflow
                 IconButton(
                   icon: const Icon(Icons.wrap_text),
                   tooltip: 'Mod Teks Reflow',
@@ -184,17 +181,18 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                       ? () => _openReflow(currentPage, totalPages)
                       : null,
                 ),
-                // Night mode
                 IconButton(
-                  icon: Icon(nightMode ? Icons.wb_sunny_outlined : Icons.nightlight_round),
+                  icon: Icon(nightMode
+                      ? Icons.wb_sunny_outlined
+                      : Icons.nightlight_round),
                   tooltip: nightMode ? 'Mod siang' : 'Mod malam',
                   onPressed: () =>
                       ref.read(nightModeProvider.notifier).state = !nightMode,
                 ),
-                // More options
                 IconButton(
                   icon: const Icon(Icons.more_vert),
-                  onPressed: () => _showMoreOptions(context, currentPage, totalPages),
+                  onPressed: () =>
+                      _showMoreOptions(context, currentPage, totalPages),
                 ),
               ],
             )
@@ -203,7 +201,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         onTap: activeTool == AnnotationTool.none ? _toggleUI : null,
         child: Stack(
           children: [
-            // PDF
             if (_error != null)
               _buildErrorWidget()
             else if (nightMode)
@@ -218,12 +215,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
               )
             else
               _buildPdfView(),
-
-            // Loading
-            if (_isLoading)
-              const Center(child: CircularProgressIndicator()),
-
-            // Annotation overlay (per-page)
+            if (_isLoading) const Center(child: CircularProgressIndicator()),
             if (!_isLoading && _error == null && totalPages > 0)
               Positioned.fill(
                 child: AnnotationOverlay(
@@ -232,21 +224,20 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                   pageSize: _pageSize,
                 ),
               ),
-
-            // Page indicator (when toolbar hidden)
             if (!uiVisible && totalPages > 0)
               Positioned(
                 bottom: 24,
-                left: 0, right: 0,
+                left: 0,
+                right: 0,
                 child: Center(
                   child: PageIndicator(current: currentPage, total: totalPages),
                 ),
               ),
-
-            // Thumbnail strip
             if (_showThumbnails && totalPages > 0 && uiVisible)
               Positioned(
-                bottom: 0, left: 0, right: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
                 child: ThumbnailNavigator(
                   filePath: widget.filePath,
                   totalPages: totalPages,
@@ -254,24 +245,21 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                   onPageSelected: _goToPage,
                 ),
               ),
-
-            // Side panel (bookmarks / annotations)
             if (_sidePanel != SidePanel.none)
               Positioned(
-                right: 0, top: 0, bottom: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
                 child: _buildSidePanel(currentPage),
               ),
           ],
         ),
       ),
-      // Bottom bar — annotation toolbar when annotation tool active, else page nav
       bottomNavigationBar: uiVisible
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Annotation toolbar
                 const AnnotationToolbar(),
-                // Page navigation
                 if (totalPages > 0)
                   ViewerBottomBar(
                     currentPage: currentPage,
@@ -291,7 +279,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         setState(() => _isLoading = false);
         ref.read(totalPagesProvider(widget.filePath).notifier).state =
             doc.pagesCount;
-        // Get actual page size
         final page = await doc.getPage(1);
         setState(() {
           _pageSize = Size(page.width, page.height);
@@ -344,11 +331,10 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
       width: 280,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
       ),
       child: Column(
         children: [
-          // Panel header
           AppBar(
             automaticallyImplyLeading: false,
             title: Text(_sidePanel == SidePanel.bookmarks
@@ -419,7 +405,8 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               margin: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.grey.shade400,
@@ -431,9 +418,10 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
               title: const Text('Lihat penanda buku'),
               onTap: () {
                 Navigator.pop(ctx);
-                setState(() => _sidePanel = _sidePanel == SidePanel.bookmarks
-                    ? SidePanel.none
-                    : SidePanel.bookmarks);
+                setState(() => _sidePanel =
+                    _sidePanel == SidePanel.bookmarks
+                        ? SidePanel.none
+                        : SidePanel.bookmarks);
               },
             ),
             ListTile(
@@ -441,14 +429,17 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
               title: const Text('Lihat anotasi'),
               onTap: () {
                 Navigator.pop(ctx);
-                setState(() => _sidePanel = _sidePanel == SidePanel.annotations
-                    ? SidePanel.none
-                    : SidePanel.annotations);
+                setState(() => _sidePanel =
+                    _sidePanel == SidePanel.annotations
+                        ? SidePanel.none
+                        : SidePanel.annotations);
               },
             ),
             ListTile(
               leading: Icon(_showThumbnails ? Icons.grid_off : Icons.grid_view),
-              title: Text(_showThumbnails ? 'Sembunyi thumbnail' : 'Lihat thumbnail'),
+              title: Text(_showThumbnails
+                  ? 'Sembunyi thumbnail'
+                  : 'Lihat thumbnail'),
               onTap: () {
                 Navigator.pop(ctx);
                 setState(() => _showThumbnails = !_showThumbnails);
@@ -459,18 +450,25 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
               title: const Text('Kongsi PDF'),
               onTap: () {
                 Navigator.pop(ctx);
-                Share.shareXFiles([XFile(widget.filePath)], subject: widget.fileName);
+                Share.shareXFiles([XFile(widget.filePath)],
+                    subject: widget.fileName);
               },
             ),
             ListTile(
               leading: const Icon(Icons.first_page),
               title: const Text('Halaman pertama'),
-              onTap: () { Navigator.pop(ctx); _goToPage(1); },
+              onTap: () {
+                Navigator.pop(ctx);
+                _goToPage(1);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.last_page),
               title: const Text('Halaman terakhir'),
-              onTap: () { Navigator.pop(ctx); _goToPage(totalPages); },
+              onTap: () {
+                Navigator.pop(ctx);
+                _goToPage(totalPages);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.input),
@@ -503,7 +501,9 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal')),
           FilledButton(
             onPressed: () {
               final page = int.tryParse(controller.text);
