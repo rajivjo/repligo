@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 
@@ -32,9 +33,7 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
   @override
   void didUpdateWidget(ThumbnailNavigator old) {
     super.didUpdateWidget(old);
-    if (old.currentPage != widget.currentPage) {
-      _scrollToCurrentPage();
-    }
+    if (old.currentPage != widget.currentPage) _scrollToCurrentPage();
   }
 
   void _scrollToCurrentPage() {
@@ -57,7 +56,6 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
       height: 150,
       color: colorScheme.surfaceVariant.withOpacity(0.9),
@@ -69,7 +67,6 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
         itemBuilder: (ctx, i) {
           final page = i + 1;
           final isActive = page == widget.currentPage;
-
           return GestureDetector(
             onTap: () => widget.onPageSelected(page),
             child: Container(
@@ -88,10 +85,7 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
                   Expanded(
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
-                      child: _PageThumbnail(
-                        filePath: widget.filePath,
-                        pageNumber: page,
-                      ),
+                      child: _PageThumbnail(filePath: widget.filePath, pageNumber: page),
                     ),
                   ),
                   Container(
@@ -118,7 +112,6 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
 class _PageThumbnail extends StatefulWidget {
   final String filePath;
   final int pageNumber;
-
   const _PageThumbnail({required this.filePath, required this.pageNumber});
 
   @override
@@ -126,7 +119,7 @@ class _PageThumbnail extends StatefulWidget {
 }
 
 class _PageThumbnailState extends State<_PageThumbnail> {
-  PdfPageImage? _image;
+  Uint8List? _bytes;
   bool _loading = true;
 
   @override
@@ -147,11 +140,13 @@ class _PageThumbnailState extends State<_PageThumbnail> {
       );
       await page.close();
       await doc.close();
-      if (mounted) {
+      if (mounted && img != null) {
         setState(() {
-          _image = img;
+          _bytes = img.bytes;
           _loading = false;
         });
+      } else {
+        if (mounted) setState(() => _loading = false);
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -169,9 +164,9 @@ class _PageThumbnailState extends State<_PageThumbnail> {
         ),
       );
     }
-    if (_image != null) {
+    if (_bytes != null) {
       return Image.memory(
-        _image!.bytes,
+        _bytes!,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => _placeholder(),
       );
@@ -181,10 +176,4 @@ class _PageThumbnailState extends State<_PageThumbnail> {
 
   Widget _placeholder() =>
       const Center(child: Icon(Icons.description_outlined, size: 32));
-
-  @override
-  void dispose() {
-    _image?.dispose();
-    super.dispose();
-  }
 }
