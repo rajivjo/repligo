@@ -1,0 +1,519 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdfx/pdfx.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../../../core/database/app_database.dart';
+import '../../../annotation/domain/usecases/annotation_provider.dart';
+import '../../../annotation/presentation/widgets/annotation_overlay.dart';
+import '../../../annotation/presentation/widgets/annotation_toolbar.dart';
+import '../../../annotation/presentation/widgets/annotation_list_panel.dart';
+import '../../../bookmark/domain/usecases/bookmark_provider.dart';
+import '../../../bookmark/presentation/widgets/bookmark_list_panel.dart';
+import '../../../search/presentation/screens/pdf_search_screen.dart';
+import '../../../text_reflow/domain/usecases/reflow_provider.dart';
+import '../../../text_reflow/presentation/screens/text_reflow_screen.dart';
+import '../../domain/usecases/pdf_viewer_provider.dart';
+import '../widgets/page_indicator.dart';
+import '../widgets/viewer_bottom_bar.dart';
+import '../widgets/thumbnail_navigator.dart';
+
+enum SidePanel { none, bookmarks, annotations }
+
+class PdfViewerScreen extends ConsumerStatefulWidget {
+  final String filePath;
+  final String fileName;
+
+  const PdfViewerScreen({
+    super.key,
+    required this.filePath,
+    required this.fileName,
+  });
+
+  @override
+  ConsumerState<PdfViewerScreen> createState() => _PdfViewerScreenState();
+}
+
+class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
+    with SingleTickerProviderStateMixin {
+  late PdfControllerPinch _pdfController;
+  bool _isLoading = true;
+  String? _error;
+  bool _showThumbnails = false;
+  SidePanel _sidePanel = SidePanel.none;
+  late Size _pageSize;
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _pageSize = const Size(595, 842); // A4 default until real size loaded
+    _initPdf();
+    _restoreProgress();
+  }
+
+  void _initPdf() {
+    try {
+      _pdfController = PdfControllerPinch(
+        document: PdfDocument.openFile(widget.filePath),
+      );
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _restoreProgress() async {
+    final db = ref.read(appDatabaseProvider);
+    final progress = await db.getProgress(widget.filePath);
+    if (progress != null && progress.currentPage > 1 && mounted) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      _pdfController.animateToPage(
+        progress.currentPage,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _pdfController.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+        overlays: SystemUiOverlay.values);
+    super.dispose();
+  }
+
+  void _toggleUI() {
+    final current = ref.read(uiVisibleProvider(widget.filePath));
+    ref.read(uiVisibleProvider(widget.filePath).notifier).state = !current;
+  }
+
+  void _goToPage(int page) {
+    final total = ref.read(totalPagesProvider(widget.filePath));
+    if (page >= 1 && page <= total) {
+      _pdfController.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  Future<void> _saveProgress(int page) async {
+    final total = ref.read(totalPagesProvider(widget.filePath));
+    await ref.read(appDatabaseProvider).saveProgress(widget.filePath, page, total);
+  }
+
+  Future<void> _toggleBookmark(int page) async {
+    final notifier = ref.read(bookmarkNotifierProvider.notifier);
+    final added = await notifier.toggle(widget.filePath, page, 'Halaman $page');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(added ? 'Penanda ditambah' : 'Penanda dialih keluar'),
+        duration: const Duration(seconds: 1),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uiVisible = ref.watch(uiVisibleProvider(widget.filePath));
+    final nightMode = ref.watch(nightModeProvider);
+    final currentPage = ref.watch(currentPageProvider(widget.filePath));
+    final totalPages = ref.watch(totalPagesProvider(widget.filePath));
+    final activeTool = ref.watch(activeToolProvider);
+    final isBookmarked = ref.watch(
+        isPageBookmarkedProvider((filePath: widget.filePath, page: currentPage)));
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: nightMode ? const Color(0xFF1A1A1A) : Colors.grey.shade700,
+      extendBodyBehindAppBar: true,
+      appBar: uiVisible
+          ? AppBar(
+              backgroundColor: colorScheme.surface.withOpacity(0.95),
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.fileName.replaceAll('.pdf', ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                  if (totalPages > 0)
+                    Text('$currentPage / $totalPages halaman',
+                        style: const TextStyle(fontSize: 11)),
+                ],
+              ),
+              actions: [
+                // In-document search
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Cari dalam PDF',
+                  onPressed: totalPages > 0
+                      ? () => _openSearch(currentPage, totalPages)
+                      : null,
+                ),
+                // Bookmark toggle
+                isBookmarked.when(
+                  data: (bookmarked) => IconButton(
+                    icon: Icon(bookmarked ? Icons.bookmark : Icons.bookmark_border),
+                    tooltip: bookmarked ? 'Buang penanda' : 'Tambah penanda',
+                    color: bookmarked ? colorScheme.primary : null,
+                    onPressed: () => _toggleBookmark(currentPage),
+                  ),
+                  loading: () => const IconButton(onPressed: null, icon: Icon(Icons.bookmark_border)),
+                  error: (_, __) => const SizedBox(),
+                ),
+                // Text reflow
+                IconButton(
+                  icon: const Icon(Icons.wrap_text),
+                  tooltip: 'Mod Teks Reflow',
+                  onPressed: totalPages > 0
+                      ? () => _openReflow(currentPage, totalPages)
+                      : null,
+                ),
+                // Night mode
+                IconButton(
+                  icon: Icon(nightMode ? Icons.wb_sunny_outlined : Icons.nightlight_round),
+                  tooltip: nightMode ? 'Mod siang' : 'Mod malam',
+                  onPressed: () =>
+                      ref.read(nightModeProvider.notifier).state = !nightMode,
+                ),
+                // More options
+                IconButton(
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () => _showMoreOptions(context, currentPage, totalPages),
+                ),
+              ],
+            )
+          : null,
+      body: GestureDetector(
+        onTap: activeTool == AnnotationTool.none ? _toggleUI : null,
+        child: Stack(
+          children: [
+            // PDF
+            if (_error != null)
+              _buildErrorWidget()
+            else if (nightMode)
+              ColorFiltered(
+                colorFilter: const ColorFilter.matrix([
+                  -1, 0, 0, 0, 255,
+                  0, -1, 0, 0, 255,
+                  0, 0, -1, 0, 255,
+                  0, 0, 0, 1, 0,
+                ]),
+                child: _buildPdfView(),
+              )
+            else
+              _buildPdfView(),
+
+            // Loading
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator()),
+
+            // Annotation overlay (per-page)
+            if (!_isLoading && _error == null && totalPages > 0)
+              Positioned.fill(
+                child: AnnotationOverlay(
+                  filePath: widget.filePath,
+                  pageNumber: currentPage,
+                  pageSize: _pageSize,
+                ),
+              ),
+
+            // Page indicator (when toolbar hidden)
+            if (!uiVisible && totalPages > 0)
+              Positioned(
+                bottom: 24,
+                left: 0, right: 0,
+                child: Center(
+                  child: PageIndicator(current: currentPage, total: totalPages),
+                ),
+              ),
+
+            // Thumbnail strip
+            if (_showThumbnails && totalPages > 0 && uiVisible)
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: ThumbnailNavigator(
+                  filePath: widget.filePath,
+                  totalPages: totalPages,
+                  currentPage: currentPage,
+                  onPageSelected: _goToPage,
+                ),
+              ),
+
+            // Side panel (bookmarks / annotations)
+            if (_sidePanel != SidePanel.none)
+              Positioned(
+                right: 0, top: 0, bottom: 0,
+                child: _buildSidePanel(currentPage),
+              ),
+          ],
+        ),
+      ),
+      // Bottom bar — annotation toolbar when annotation tool active, else page nav
+      bottomNavigationBar: uiVisible
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Annotation toolbar
+                const AnnotationToolbar(),
+                // Page navigation
+                if (totalPages > 0)
+                  ViewerBottomBar(
+                    currentPage: currentPage,
+                    totalPages: totalPages,
+                    onPageChanged: _goToPage,
+                  ),
+              ],
+            )
+          : null,
+    );
+  }
+
+  Widget _buildPdfView() {
+    return PdfViewPinch(
+      controller: _pdfController,
+      onDocumentLoaded: (doc) async {
+        setState(() => _isLoading = false);
+        ref.read(totalPagesProvider(widget.filePath).notifier).state =
+            doc.pagesCount;
+        // Get actual page size
+        final page = await doc.getPage(1);
+        setState(() {
+          _pageSize = Size(page.width, page.height);
+        });
+        await page.close();
+      },
+      onDocumentError: (error) {
+        setState(() {
+          _isLoading = false;
+          _error = error.toString();
+        });
+      },
+      onPageChanged: (page) {
+        ref.read(currentPageProvider(widget.filePath).notifier).state = page;
+        _saveProgress(page);
+      },
+      builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
+        options: const DefaultBuilderOptions(),
+        documentLoaderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator()),
+        pageLoaderBuilder: (_) =>
+            const Center(child: CircularProgressIndicator()),
+        errorBuilder: (_, error) => Center(
+          child: Text(error.toString(),
+              style: const TextStyle(color: Colors.white)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          const SizedBox(height: 12),
+          const Text('Gagal membuka PDF',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(_error!,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidePanel(int currentPage) {
+    return Container(
+      width: 280,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+      ),
+      child: Column(
+        children: [
+          // Panel header
+          AppBar(
+            automaticallyImplyLeading: false,
+            title: Text(_sidePanel == SidePanel.bookmarks
+                ? 'Penanda Buku'
+                : 'Anotasi'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => setState(() => _sidePanel = SidePanel.none),
+              ),
+            ],
+          ),
+          Expanded(
+            child: _sidePanel == SidePanel.bookmarks
+                ? BookmarkListPanel(
+                    filePath: widget.filePath,
+                    onJumpToPage: (p) {
+                      _goToPage(p);
+                      setState(() => _sidePanel = SidePanel.none);
+                    },
+                  )
+                : AnnotationListPanel(
+                    filePath: widget.filePath,
+                    onJumpToPage: (p) {
+                      _goToPage(p);
+                      setState(() => _sidePanel = SidePanel.none);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSearch(int currentPage, int totalPages) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PdfSearchScreen(
+          filePath: widget.filePath,
+          totalPages: totalPages,
+          onJumpToPage: _goToPage,
+        ),
+      ),
+    );
+  }
+
+  void _openReflow(int currentPage, int totalPages) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TextReflowScreen(
+          filePath: widget.filePath,
+          fileName: widget.fileName,
+          initialPage: currentPage,
+          totalPages: totalPages,
+          onPageChanged: _goToPage,
+        ),
+      ),
+    );
+  }
+
+  void _showMoreOptions(BuildContext context, int currentPage, int totalPages) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.bookmark_border),
+              title: const Text('Lihat penanda buku'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _sidePanel = _sidePanel == SidePanel.bookmarks
+                    ? SidePanel.none
+                    : SidePanel.bookmarks);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.highlight),
+              title: const Text('Lihat anotasi'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _sidePanel = _sidePanel == SidePanel.annotations
+                    ? SidePanel.none
+                    : SidePanel.annotations);
+              },
+            ),
+            ListTile(
+              leading: Icon(_showThumbnails ? Icons.grid_off : Icons.grid_view),
+              title: Text(_showThumbnails ? 'Sembunyi thumbnail' : 'Lihat thumbnail'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _showThumbnails = !_showThumbnails);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Kongsi PDF'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Share.shareXFiles([XFile(widget.filePath)], subject: widget.fileName);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.first_page),
+              title: const Text('Halaman pertama'),
+              onTap: () { Navigator.pop(ctx); _goToPage(1); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.last_page),
+              title: const Text('Halaman terakhir'),
+              onTap: () { Navigator.pop(ctx); _goToPage(totalPages); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.input),
+              title: const Text('Pergi ke halaman...'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showGoToPageDialog(totalPages);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showGoToPageDialog(int total) async {
+    final controller = TextEditingController();
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pergi ke halaman'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            hintText: '1 – $total',
+            border: const OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+          FilledButton(
+            onPressed: () {
+              final page = int.tryParse(controller.text);
+              if (page != null) Navigator.pop(ctx, page);
+            },
+            child: const Text('Pergi'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) _goToPage(result);
+  }
+}

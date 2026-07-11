@@ -1,0 +1,24 @@
+<!-- Tambah dalam AndroidManifest.xml di dalam <manifest> tag -->
+
+<!-- Storage permissions -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="29" />
+
+<!-- Android 13+ granular permission -->
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+<!-- Receive PDF from other apps -->
+<!-- Tambah dalam <activity> tag dalam AndroidManifest.xml -->
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="application/pdf" />
+</intent-filter>
+
+<intent-filter>
+    <action android:name="android.intent.action.SEND" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <data android:mimeType="application/pdf" />
+</intent-filter>
