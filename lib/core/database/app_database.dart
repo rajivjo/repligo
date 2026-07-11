@@ -5,20 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+part 'app_database.g.dart';
+
 // ─── Table definitions ────────────────────────────────────────────────────────
 
 class Annotations extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get filePath => text()();
   IntColumn get pageNumber => integer()();
-  TextColumn get type => text()(); // 'highlight' | 'note' | 'drawing'
+  TextColumn get type => text()();
   TextColumn get color => text().withDefault(const Constant('#FFFF00'))();
   RealColumn get x => real()();
   RealColumn get y => real()();
   RealColumn get width => real()();
   RealColumn get height => real()();
-  TextColumn get content => text().nullable()(); // note text / drawing path JSON
-  TextColumn get selectedText => text().nullable()(); // highlighted text
+  TextColumn get content => text().nullable()();
+  TextColumn get selectedText => text().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
@@ -43,7 +45,6 @@ class ReadingProgress extends Table {
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 
-part 'app_database.g.dart';
 @DriftDatabase(tables: [Annotations, Bookmarks, ReadingProgress])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -51,7 +52,6 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
-  // Annotation queries
   Future<List<Annotation>> getAnnotationsForPage(String filePath, int page) =>
       (select(annotations)
             ..where((a) => a.filePath.equals(filePath) & a.pageNumber.equals(page)))
@@ -72,7 +72,6 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteAllAnnotationsForFile(String filePath) =>
       (delete(annotations)..where((a) => a.filePath.equals(filePath))).go();
 
-  // Bookmark queries
   Future<List<Bookmark>> getBookmarksForFile(String filePath) =>
       (select(bookmarks)
             ..where((b) => b.filePath.equals(filePath))
@@ -92,7 +91,7 @@ class AppDatabase extends _$AppDatabase {
         .getSingleOrNull();
     if (existing != null) {
       await (delete(bookmarks)..where((b) => b.id.equals(existing.id))).go();
-      return -1; // removed
+      return -1;
     } else {
       return into(bookmarks).insert(BookmarksCompanion.insert(
         filePath: filePath,
@@ -105,7 +104,6 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteBookmark(int id) =>
       (delete(bookmarks)..where((b) => b.id.equals(id))).go();
 
-  // Reading progress
   Future<ReadingProgressData?> getProgress(String filePath) =>
       (select(readingProgress)..where((r) => r.filePath.equals(filePath)))
           .getSingleOrNull();
@@ -128,7 +126,6 @@ LazyDatabase _openConnection() {
   });
 }
 
-// Riverpod provider
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();
   ref.onDispose(db.close);

@@ -88,7 +88,7 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
                   Expanded(
                     child: ClipRRect(
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
-                      child: PdfPageImage(
+                      child: _PageThumbnail(
                         filePath: widget.filePath,
                         pageNumber: page,
                       ),
@@ -115,18 +115,17 @@ class _ThumbnailNavigatorState extends State<ThumbnailNavigator> {
   }
 }
 
-// Widget to render a single PDF page thumbnail
-class PdfPageImage extends StatefulWidget {
+class _PageThumbnail extends StatefulWidget {
   final String filePath;
   final int pageNumber;
 
-  const PdfPageImage({super.key, required this.filePath, required this.pageNumber});
+  const _PageThumbnail({required this.filePath, required this.pageNumber});
 
   @override
-  State<PdfPageImage> createState() => _PdfPageImageState();
+  State<_PageThumbnail> createState() => _PageThumbnailState();
 }
 
-class _PdfPageImageState extends State<PdfPageImage> {
+class _PageThumbnailState extends State<_PageThumbnail> {
   PdfPageImage? _image;
   bool _loading = true;
 
@@ -148,10 +147,12 @@ class _PdfPageImageState extends State<PdfPageImage> {
       );
       await page.close();
       await doc.close();
-      if (mounted) setState(() {
-        _image = img;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _image = img;
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -160,17 +161,26 @@ class _PdfPageImageState extends State<PdfPageImage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: SizedBox(width: 20, height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2)));
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
     }
-    if (_image?.bytes != null) {
-      return Image.memory(_image!.bytes!, fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _placeholder());
+    if (_image != null) {
+      return Image.memory(
+        _image!.bytes,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholder(),
+      );
     }
     return _placeholder();
   }
 
-  Widget _placeholder() => const Center(child: Icon(Icons.description_outlined, size: 32));
+  Widget _placeholder() =>
+      const Center(child: Icon(Icons.description_outlined, size: 32));
 
   @override
   void dispose() {
