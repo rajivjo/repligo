@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart' as file_picker;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,7 +57,7 @@ class _FileManagerScreenState extends ConsumerState<FileManagerScreen>
 
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+      type: file_picker.FileType.custom,
       allowedExtensions: ['pdf'],
     );
     if (result != null && result.files.single.path != null) {
