@@ -30,7 +30,7 @@ class Bookmarks extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
-class ReadingProgress extends Table {
+class ReadingProgressTable extends Table {
   TextColumn get filePath => text()();
   IntColumn get currentPage => integer().withDefault(const Constant(1))();
   IntColumn get totalPages => integer().withDefault(const Constant(0))();
@@ -41,7 +41,7 @@ class ReadingProgress extends Table {
   Set<Column> get primaryKey => {filePath};
 }
 
-@DriftDatabase(tables: [Annotations, Bookmarks, ReadingProgress])
+@DriftDatabase(tables: [Annotations, Bookmarks, ReadingProgressTable])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
