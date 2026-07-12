@@ -45,13 +45,11 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
   bool _showThumbnails = false;
   bool _reflowMode = false;
   SidePanel _sidePanel = SidePanel.none;
-  late Size _pageSize;
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    _pageSize = const Size(595, 842);
     _initPdf();
   }
 
@@ -97,7 +95,30 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
 
   void _goToPage(int page) {
     final total = ref.read(totalPagesProvider(widget.filePath));
-    if (page >= 1 && page <= total) {
+    if (page < 1 || page > total) return;
+    if (_reflowMode) {
+      // PdfViewPinch is hidden (but still mounted) while reflow mode is
+      // active. Animating it while hidden causes pdfx's own visible-page
+      // tracking to report unreliable/transient page numbers, so page
+      // state is driven directly here instead — the hidden view is synced
+      // back once when reflow mode is turned off.
+      ref.read(currentPageProvider(widget.filePath).notifier).state = page;
+      _saveProgress(page);
+    } else {
+      _pdfController.animateToPage(
+        pageNumber: page,
+        duration: Duration.zero,
+        curve: Curves.linear,
+      );
+    }
+  }
+
+  void _toggleReflowMode() {
+    setState(() => _reflowMode = !_reflowMode);
+    if (!_reflowMode) {
+      // Sync the hidden PdfView to the page reached while reading in
+      // reflow mode before it becomes visible again.
+      final page = ref.read(currentPageProvider(widget.filePath));
       _pdfController.animateToPage(
         pageNumber: page,
         duration: Duration.zero,
@@ -181,9 +202,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                   icon: const Icon(Icons.wrap_text),
                   tooltip: _reflowMode ? 'Paparan PDF biasa' : 'Mod Teks Reflow',
                   color: _reflowMode ? colorScheme.primary : null,
-                  onPressed: totalPages > 0
-                      ? () => setState(() => _reflowMode = !_reflowMode)
-                      : null,
+                  onPressed: totalPages > 0 ? _toggleReflowMode : null,
                 ),
                 if (_reflowMode)
                   IconButton(
@@ -235,12 +254,10 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
             if (_error == null && _reflowMode) _buildReflowView(currentPage),
             if (_isLoading) const Center(child: CircularProgressIndicator()),
             if (!_isLoading && _error == null && !_reflowMode && totalPages > 0)
-              Positioned.fill(
-                child: AnnotationOverlay(
-                  filePath: widget.filePath,
-                  pageNumber: currentPage,
-                  pageSize: _pageSize,
-                ),
+              AnnotationOverlay(
+                filePath: widget.filePath,
+                pageNumber: currentPage,
+                pdfController: _pdfController,
               ),
             if (!uiVisible && totalPages > 0)
               Positioned(
@@ -298,11 +315,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         setState(() => _isLoading = false);
         ref.read(totalPagesProvider(widget.filePath).notifier).state =
             doc.pagesCount;
-        final page = await doc.getPage(1);
-        setState(() {
-          _pageSize = Size(page.width, page.height);
-        });
-        await page.close();
         await _restoreProgress();
       },
       onDocumentError: (error) {
@@ -312,6 +324,10 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         });
       },
       onPageChanged: (page) {
+        // While reflow mode is active, page state is driven directly by
+        // _goToPage instead — ignore pdfx's own reports from the hidden
+        // view so they can't clobber it with stale/transient values.
+        if (_reflowMode) return;
         ref.read(currentPageProvider(widget.filePath).notifier).state = page;
         _saveProgress(page);
       },

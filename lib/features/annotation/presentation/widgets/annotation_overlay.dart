@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdfx/pdfx.dart';
 import '../../../../core/database/app_database.dart';
 import '../../domain/entities/annotation_model.dart';
 import '../../domain/usecases/annotation_provider.dart';
@@ -8,13 +9,13 @@ import '../../domain/usecases/annotation_provider.dart';
 class AnnotationOverlay extends ConsumerStatefulWidget {
   final String filePath;
   final int pageNumber;
-  final Size pageSize;
+  final PdfControllerPinch pdfController;
 
   const AnnotationOverlay({
     super.key,
     required this.filePath,
     required this.pageNumber,
-    required this.pageSize,
+    required this.pdfController,
   });
 
   @override
@@ -60,10 +61,10 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
   Offset? _dragStart;
   Offset? _dragCurrent;
 
-  // Actual on-screen size of this overlay (fills the page viewport). Used
-  // instead of widget.pageSize (the PDF's intrinsic point size, which can
-  // differ from the rendered pixel size) so that touch coordinates and
-  // painted coordinates always agree.
+  // Actual on-screen size of this overlay, which is positioned/sized to
+  // exactly match the page's current on-screen rect (see build()). Used to
+  // normalize/denormalize annotation coordinates so touch and paint
+  // positions always agree, at any zoom/pan level.
   Size _overlaySize = Size.zero;
 
   // Eraser state
@@ -175,33 +176,54 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
     final strokeColor = ref.watch(activeColorProvider);
     final strokeWidth = ref.watch(drawingStrokeWidthProvider);
 
-    return LayoutBuilder(builder: (context, constraints) {
-      _overlaySize = constraints.biggest;
-      return IgnorePointer(
-        ignoring: tool == AnnotationTool.none,
-        child: GestureDetector(
-          onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
-          onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
-          onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
-          onTapUp: tool == AnnotationTool.note
-              ? _onTapForNote
-              : (tool == AnnotationTool.eraser ? _onTapForEraser : null),
-          child: CustomPaint(
-            painter: _AnnotationPainter(
-              annotations: annotationsAsync.valueOrNull ?? [],
-              currentStroke: _currentStroke,
-              completedStrokes: _completedStrokes,
-              dragStart: _dragStart,
-              dragCurrent: _dragCurrent,
-              activeTool: tool,
-              strokeColor: strokeColor,
-              strokeWidth: strokeWidth,
-            ),
-            child: const SizedBox.expand(),
-          ),
-        ),
-      );
-    });
+    // PdfViewPinch places each page at a rect in "document space" and then
+    // applies a pan/zoom transform on top of it. Re-derive the page's
+    // actual on-screen rect on every transform change so this overlay
+    // stays pixel-aligned with the rendered page instead of covering the
+    // whole (usually letterboxed) viewport.
+    return AnimatedBuilder(
+      animation: widget.pdfController,
+      builder: (context, child) {
+        final docRect = widget.pdfController.getPageRect(widget.pageNumber);
+        if (docRect == null) return const SizedBox.shrink();
+        final screenRect =
+            MatrixUtils.transformRect(widget.pdfController.value, docRect);
+
+        return Positioned(
+          left: screenRect.left,
+          top: screenRect.top,
+          width: screenRect.width,
+          height: screenRect.height,
+          child: LayoutBuilder(builder: (context, constraints) {
+            _overlaySize = constraints.biggest;
+            return IgnorePointer(
+              ignoring: tool == AnnotationTool.none,
+              child: GestureDetector(
+                onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
+                onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
+                onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
+                onTapUp: tool == AnnotationTool.note
+                    ? _onTapForNote
+                    : (tool == AnnotationTool.eraser ? _onTapForEraser : null),
+                child: CustomPaint(
+                  painter: _AnnotationPainter(
+                    annotations: annotationsAsync.valueOrNull ?? [],
+                    currentStroke: _currentStroke,
+                    completedStrokes: _completedStrokes,
+                    dragStart: _dragStart,
+                    dragCurrent: _dragCurrent,
+                    activeTool: tool,
+                    strokeColor: strokeColor,
+                    strokeWidth: strokeWidth,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
   }
 
   Future<void> _onTapForNote(TapUpDetails d) async {
