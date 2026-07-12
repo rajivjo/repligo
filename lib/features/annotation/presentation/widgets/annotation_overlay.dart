@@ -103,24 +103,27 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
     final strokeColor = ref.watch(activeColorProvider);
     final strokeWidth = ref.watch(drawingStrokeWidthProvider);
 
-    return GestureDetector(
-      onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
-      onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
-      onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
-      onTapUp: tool == AnnotationTool.note ? _onTapForNote : null,
-      child: CustomPaint(
-        painter: _AnnotationPainter(
-          annotations: annotationsAsync.valueOrNull ?? [],
-          pageSize: widget.pageSize,
-          currentStroke: _currentStroke,
-          completedStrokes: _completedStrokes,
-          dragStart: _dragStart,
-          dragCurrent: _dragCurrent,
-          activeTool: tool,
-          strokeColor: strokeColor,
-          strokeWidth: strokeWidth,
+    return IgnorePointer(
+      ignoring: tool == AnnotationTool.none,
+      child: GestureDetector(
+        onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
+        onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
+        onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
+        onTapUp: tool == AnnotationTool.note ? _onTapForNote : null,
+        child: CustomPaint(
+          painter: _AnnotationPainter(
+            annotations: annotationsAsync.valueOrNull ?? [],
+            pageSize: widget.pageSize,
+            currentStroke: _currentStroke,
+            completedStrokes: _completedStrokes,
+            dragStart: _dragStart,
+            dragCurrent: _dragCurrent,
+            activeTool: tool,
+            strokeColor: strokeColor,
+            strokeWidth: strokeWidth,
+          ),
+          child: const SizedBox.expand(),
         ),
-        child: const SizedBox.expand(),
       ),
     );
   }

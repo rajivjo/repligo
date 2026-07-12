@@ -13,6 +13,7 @@ dependencies:
   # PDF rendering & text extraction
   pdfx: ^2.6.0
   syncfusion_flutter_pdf: ^25.1.41
+  syncfusion_flutter_core: ^25.1.41
 
   # State management
   flutter_riverpod: ^2.5.1

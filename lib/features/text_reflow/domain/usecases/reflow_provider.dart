@@ -23,29 +23,25 @@ final pageTextProvider =
   }
 
   // Extract from PDF
-  try {
-    final bytes = await File(args.filePath).readAsBytes();
-    final document = PdfDocument(inputBytes: bytes);
+  final bytes = await File(args.filePath).readAsBytes();
+  final document = PdfDocument(inputBytes: bytes);
 
-    if (args.page < 1 || args.page > document.pages.count) {
-      document.dispose();
-      return '';
-    }
-
-    final extractor = PdfTextExtractor(document);
-    final text = extractor.extractText(startPageIndex: args.page - 1, endPageIndex: args.page - 1);
+  if (args.page < 1 || args.page > document.pages.count) {
     document.dispose();
-
-    // Update cache
-    final newCache = Map<String, Map<int, String>>.from(cache);
-    newCache[args.filePath] = Map<int, String>.from(fileCache ?? {})
-      ..[args.page] = text;
-    ref.read(_textCacheProvider.notifier).state = newCache;
-
-    return text;
-  } catch (e) {
-    return 'Ralat mengekstrak teks: $e';
+    return '';
   }
+
+  final extractor = PdfTextExtractor(document);
+  final text = extractor.extractText(startPageIndex: args.page - 1, endPageIndex: args.page - 1);
+  document.dispose();
+
+  // Update cache
+  final newCache = Map<String, Map<int, String>>.from(cache);
+  newCache[args.filePath] = Map<int, String>.from(fileCache ?? {})
+    ..[args.page] = text;
+  ref.read(_textCacheProvider.notifier).state = newCache;
+
+  return text;
 });
 
 // Reading progress for reflow mode
