@@ -50,7 +50,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageSize = const Size(595, 842);
     _initPdf();
-    _restoreProgress();
   }
 
   void _initPdf() {
@@ -70,8 +69,13 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
     final db = ref.read(appDatabaseProvider);
     final progress = await db.getProgress(widget.filePath);
     if (progress != null && progress.currentPage > 1 && mounted) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      _pdfController.jumpToPage(progress.currentPage);
+      _pdfController.animateToPage(
+        pageNumber: progress.currentPage,
+        duration: Duration.zero,
+        curve: Curves.linear,
+      );
+      ref.read(currentPageProvider(widget.filePath).notifier).state =
+          progress.currentPage;
     }
   }
 
@@ -91,7 +95,11 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
   void _goToPage(int page) {
     final total = ref.read(totalPagesProvider(widget.filePath));
     if (page >= 1 && page <= total) {
-      _pdfController.jumpToPage(page);
+      _pdfController.animateToPage(
+        pageNumber: page,
+        duration: Duration.zero,
+        curve: Curves.linear,
+      );
     }
   }
 
@@ -276,6 +284,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           _pageSize = Size(page.width, page.height);
         });
         await page.close();
+        await _restoreProgress();
       },
       onDocumentError: (error) {
         setState(() {

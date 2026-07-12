@@ -25,9 +25,9 @@ class TextReflowScreen extends ConsumerWidget {
     final lineHeight = ref.watch(reflowLineHeightProvider);
     final textAsync = ref.watch(
         pageTextProvider((filePath: filePath, page: currentPage)));
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -95,7 +95,7 @@ class TextReflowScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: fontSize,
                       height: lineHeight,
-                      color: colorScheme.onSurface,
+                      color: Colors.black,
                     ),
                   ),
                 );
