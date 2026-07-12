@@ -11,15 +11,17 @@ import '../../../annotation/presentation/widgets/annotation_toolbar.dart';
 import '../../../annotation/presentation/widgets/annotation_list_panel.dart';
 import '../../../bookmark/domain/usecases/bookmark_provider.dart';
 import '../../../bookmark/presentation/widgets/bookmark_list_panel.dart';
+import '../../../outline/domain/usecases/outline_provider.dart';
+import '../../../outline/presentation/widgets/outline_list_panel.dart';
 import '../../../search/presentation/screens/pdf_search_screen.dart';
 import '../../../text_reflow/domain/usecases/reflow_provider.dart';
-import '../../../text_reflow/presentation/screens/text_reflow_screen.dart';
 import '../../domain/usecases/pdf_viewer_provider.dart';
 import '../widgets/page_indicator.dart';
+import '../widgets/reflow_settings_sheet.dart';
 import '../widgets/viewer_bottom_bar.dart';
 import '../widgets/thumbnail_navigator.dart';
 
-enum SidePanel { none, bookmarks, annotations }
+enum SidePanel { none, bookmarks, annotations, outline }
 
 class PdfViewerScreen extends ConsumerStatefulWidget {
   final String filePath;
@@ -41,6 +43,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
   bool _isLoading = true;
   String? _error;
   bool _showThumbnails = false;
+  bool _reflowMode = false;
   SidePanel _sidePanel = SidePanel.none;
   late Size _pageSize;
 
@@ -176,11 +179,21 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                 ),
                 IconButton(
                   icon: const Icon(Icons.wrap_text),
-                  tooltip: 'Mod Teks Reflow',
+                  tooltip: _reflowMode ? 'Paparan PDF biasa' : 'Mod Teks Reflow',
+                  color: _reflowMode ? colorScheme.primary : null,
                   onPressed: totalPages > 0
-                      ? () => _openReflow(currentPage, totalPages)
+                      ? () => setState(() => _reflowMode = !_reflowMode)
                       : null,
                 ),
+                if (_reflowMode)
+                  IconButton(
+                    icon: const Icon(Icons.text_fields),
+                    tooltip: 'Saiz & Jarak Teks',
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      builder: (_) => const ReflowSettingsSheet(),
+                    ),
+                  ),
                 IconButton(
                   icon: Icon(nightMode
                       ? Icons.wb_sunny_outlined
@@ -203,6 +216,8 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           children: [
             if (_error != null)
               _buildErrorWidget()
+            else if (_reflowMode)
+              _buildReflowView(currentPage)
             else if (nightMode)
               ColorFiltered(
                 colorFilter: const ColorFilter.matrix([
@@ -216,7 +231,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
             else
               _buildPdfView(),
             if (_isLoading) const Center(child: CircularProgressIndicator()),
-            if (!_isLoading && _error == null && totalPages > 0)
+            if (!_isLoading && _error == null && !_reflowMode && totalPages > 0)
               Positioned.fill(
                 child: AnnotationOverlay(
                   filePath: widget.filePath,
@@ -259,7 +274,8 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                AnnotationToolbar(filePath: widget.filePath, page: currentPage),
+                if (!_reflowMode)
+                  AnnotationToolbar(filePath: widget.filePath, page: currentPage),
                 if (totalPages > 0)
                   ViewerBottomBar(
                     currentPage: currentPage,
@@ -338,9 +354,11 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         children: [
           AppBar(
             automaticallyImplyLeading: false,
-            title: Text(_sidePanel == SidePanel.bookmarks
-                ? 'Penanda Buku'
-                : 'Anotasi'),
+            title: Text(switch (_sidePanel) {
+              SidePanel.bookmarks => 'Penanda Buku',
+              SidePanel.outline => 'Kandungan',
+              _ => 'Anotasi',
+            }),
             actions: [
               IconButton(
                 icon: const Icon(Icons.close),
@@ -349,21 +367,29 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
             ],
           ),
           Expanded(
-            child: _sidePanel == SidePanel.bookmarks
-                ? BookmarkListPanel(
-                    filePath: widget.filePath,
-                    onJumpToPage: (p) {
-                      _goToPage(p);
-                      setState(() => _sidePanel = SidePanel.none);
-                    },
-                  )
-                : AnnotationListPanel(
-                    filePath: widget.filePath,
-                    onJumpToPage: (p) {
-                      _goToPage(p);
-                      setState(() => _sidePanel = SidePanel.none);
-                    },
-                  ),
+            child: switch (_sidePanel) {
+              SidePanel.bookmarks => BookmarkListPanel(
+                  filePath: widget.filePath,
+                  onJumpToPage: (p) {
+                    _goToPage(p);
+                    setState(() => _sidePanel = SidePanel.none);
+                  },
+                ),
+              SidePanel.outline => OutlineListPanel(
+                  filePath: widget.filePath,
+                  onJumpToPage: (p) {
+                    _goToPage(p);
+                    setState(() => _sidePanel = SidePanel.none);
+                  },
+                ),
+              _ => AnnotationListPanel(
+                  filePath: widget.filePath,
+                  onJumpToPage: (p) {
+                    _goToPage(p);
+                    setState(() => _sidePanel = SidePanel.none);
+                  },
+                ),
+            },
           ),
         ],
       ),
@@ -383,16 +409,61 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
     );
   }
 
-  void _openReflow(int currentPage, int totalPages) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TextReflowScreen(
-          filePath: widget.filePath,
-          fileName: widget.fileName,
-          initialPage: currentPage,
-          totalPages: totalPages,
-          onPageChanged: _goToPage,
+  Widget _buildReflowView(int page) {
+    final fontSize = ref.watch(reflowFontSizeProvider);
+    final lineHeight = ref.watch(reflowLineHeightProvider);
+    final uiVisible = ref.watch(uiVisibleProvider(widget.filePath));
+    final textAsync =
+        ref.watch(pageTextProvider((filePath: widget.filePath, page: page)));
+    final topInset =
+        MediaQuery.of(context).padding.top + (uiVisible ? 76.0 : 12.0);
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.white,
+        child: textAsync.when(
+          loading: () => const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('Mengekstrak teks...'),
+              ],
+            ),
+          ),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (text) {
+            if (text.trim().isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.text_snippet_outlined,
+                        size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 8),
+                    const Text('Halaman ini tiada teks boleh diextract',
+                        style: TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    const Text('(mungkin gambar atau PDF imbasan)',
+                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  ],
+                ),
+              );
+            }
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(20, topInset, 20, 40),
+              child: SelectableText(
+                text.trim(),
+                style: TextStyle(
+                  fontSize: fontSize,
+                  height: lineHeight,
+                  color: Colors.black,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -434,6 +505,16 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
                     _sidePanel == SidePanel.annotations
                         ? SidePanel.none
                         : SidePanel.annotations);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.toc),
+              title: const Text('Lihat kandungan (TOC)'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _sidePanel = _sidePanel == SidePanel.outline
+                    ? SidePanel.none
+                    : SidePanel.outline);
               },
             ),
             ListTile(

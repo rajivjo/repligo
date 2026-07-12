@@ -43,11 +43,3 @@ final pageTextProvider =
 
   return text;
 });
-
-// Reading progress for reflow mode
-final reflowPageProvider =
-    StateProvider.family<int, String>((ref, filePath) => 1);
-
-// Is reflow mode active
-final reflowModeActiveProvider =
-    StateProvider.family<bool, String>((ref, filePath) => false);
