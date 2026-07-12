@@ -60,6 +60,12 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
   Offset? _dragStart;
   Offset? _dragCurrent;
 
+  // Actual on-screen size of this overlay (fills the page viewport). Used
+  // instead of widget.pageSize (the PDF's intrinsic point size, which can
+  // differ from the rendered pixel size) so that touch coordinates and
+  // painted coordinates always agree.
+  Size _overlaySize = Size.zero;
+
   // Eraser state
   List<Annotation>? _eraserSnapshot;
   final Set<int> _erasedThisDrag = {};
@@ -100,7 +106,7 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
     if (snapshot == null) return;
     final candidates =
         snapshot.where((a) => !_erasedThisDrag.contains(a.id)).toList();
-    final hits = _hitTestAnnotations(position, candidates, widget.pageSize);
+    final hits = _hitTestAnnotations(position, candidates, _overlaySize);
     if (hits.isEmpty) return;
     final target = hits.last;
     _erasedThisDrag.add(target.id);
@@ -129,12 +135,13 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
         page: widget.pageNumber,
         pathJson: pathJson,
         bounds: bounds,
-        pageSize: widget.pageSize,
+        pageSize: _overlaySize,
       );
       setState(() {
         _currentStroke = [];
         _completedStrokes = [];
       });
+      ref.read(activeToolProvider.notifier).state = AnnotationTool.none;
     } else if (_isRectTool(tool) &&
         _dragStart != null &&
         _dragCurrent != null) {
@@ -144,7 +151,7 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
           filePath: widget.filePath,
           page: widget.pageNumber,
           rect: rect,
-          pageSize: widget.pageSize,
+          pageSize: _overlaySize,
           type: _typeForTool(tool),
         );
       }
@@ -152,6 +159,7 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
         _dragStart = null;
         _dragCurrent = null;
       });
+      ref.read(activeToolProvider.notifier).state = AnnotationTool.none;
     } else if (tool == AnnotationTool.eraser) {
       _eraserSnapshot = null;
       _erasedThisDrag.clear();
@@ -167,31 +175,33 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
     final strokeColor = ref.watch(activeColorProvider);
     final strokeWidth = ref.watch(drawingStrokeWidthProvider);
 
-    return IgnorePointer(
-      ignoring: tool == AnnotationTool.none,
-      child: GestureDetector(
-        onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
-        onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
-        onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
-        onTapUp: tool == AnnotationTool.note
-            ? _onTapForNote
-            : (tool == AnnotationTool.eraser ? _onTapForEraser : null),
-        child: CustomPaint(
-          painter: _AnnotationPainter(
-            annotations: annotationsAsync.valueOrNull ?? [],
-            pageSize: widget.pageSize,
-            currentStroke: _currentStroke,
-            completedStrokes: _completedStrokes,
-            dragStart: _dragStart,
-            dragCurrent: _dragCurrent,
-            activeTool: tool,
-            strokeColor: strokeColor,
-            strokeWidth: strokeWidth,
+    return LayoutBuilder(builder: (context, constraints) {
+      _overlaySize = constraints.biggest;
+      return IgnorePointer(
+        ignoring: tool == AnnotationTool.none,
+        child: GestureDetector(
+          onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
+          onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
+          onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
+          onTapUp: tool == AnnotationTool.note
+              ? _onTapForNote
+              : (tool == AnnotationTool.eraser ? _onTapForEraser : null),
+          child: CustomPaint(
+            painter: _AnnotationPainter(
+              annotations: annotationsAsync.valueOrNull ?? [],
+              currentStroke: _currentStroke,
+              completedStrokes: _completedStrokes,
+              dragStart: _dragStart,
+              dragCurrent: _dragCurrent,
+              activeTool: tool,
+              strokeColor: strokeColor,
+              strokeWidth: strokeWidth,
+            ),
+            child: const SizedBox.expand(),
           ),
-          child: const SizedBox.expand(),
         ),
-      ),
-    );
+      );
+    });
   }
 
   Future<void> _onTapForNote(TapUpDetails d) async {
@@ -201,9 +211,10 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
           filePath: widget.filePath,
           page: widget.pageNumber,
           position: d.localPosition,
-          pageSize: widget.pageSize,
+          pageSize: _overlaySize,
           content: content,
         );
+    ref.read(activeToolProvider.notifier).state = AnnotationTool.none;
   }
 
   void _onTapForEraser(TapUpDetails d) {
@@ -212,7 +223,7 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
                 (filePath: widget.filePath, page: widget.pageNumber)))
             .valueOrNull ??
         [];
-    final hits = _hitTestAnnotations(d.localPosition, annotations, widget.pageSize);
+    final hits = _hitTestAnnotations(d.localPosition, annotations, _overlaySize);
     if (hits.isEmpty) return;
     final target = hits.last;
     ref
@@ -252,7 +263,6 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
 
 class _AnnotationPainter extends CustomPainter {
   final List<Annotation> annotations;
-  final Size pageSize;
   final List<Offset> currentStroke;
   final List<List<Offset>> completedStrokes;
   final Offset? dragStart;
@@ -263,7 +273,6 @@ class _AnnotationPainter extends CustomPainter {
 
   _AnnotationPainter({
     required this.annotations,
-    required this.pageSize,
     required this.currentStroke,
     required this.completedStrokes,
     required this.dragStart,
@@ -275,9 +284,6 @@ class _AnnotationPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final scaleX = size.width / pageSize.width;
-    final scaleY = size.height / pageSize.height;
-
     // Draw saved annotations
     for (final ann in annotations) {
       final color = AnnotationColor.fromHex(ann.color);
