@@ -19,6 +19,20 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Some plugins (e.g. pdfx 2.6.0) still declare an old hardcoded compileSdkVersion
+// in their own android/build.gradle, which fails AAR metadata checks against
+// newer AndroidX transitive dependencies. Force every plugin module to compile
+// against the same SDK level as the app.
+subprojects {
+    afterEvaluate {
+        if (project.name != "app") {
+            extensions.findByType(com.android.build.api.dsl.CommonExtension::class.java)?.let {
+                it.compileSdk = 36
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
