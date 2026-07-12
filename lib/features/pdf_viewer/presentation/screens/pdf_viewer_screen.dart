@@ -216,8 +216,6 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           children: [
             if (_error != null)
               _buildErrorWidget()
-            else if (_reflowMode)
-              _buildReflowView(currentPage)
             else if (nightMode)
               ColorFiltered(
                 colorFilter: const ColorFilter.matrix([
@@ -230,6 +228,11 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
               )
             else
               _buildPdfView(),
+            // PdfViewPinch (above) must stay mounted at all times — pdfx's
+            // controller only attaches to it once and doesn't reattach
+            // cleanly if it's removed from the tree — so reflow mode is
+            // rendered as an opaque overlay on top instead of replacing it.
+            if (_error == null && _reflowMode) _buildReflowView(currentPage),
             if (_isLoading) const Center(child: CircularProgressIndicator()),
             if (!_isLoading && _error == null && !_reflowMode && totalPages > 0)
               Positioned.fill(
