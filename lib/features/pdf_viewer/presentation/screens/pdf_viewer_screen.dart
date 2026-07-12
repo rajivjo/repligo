@@ -71,11 +71,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
     final progress = await db.getProgress(widget.filePath);
     if (progress != null && progress.currentPage > 1 && mounted) {
       await Future.delayed(const Duration(milliseconds: 500));
-      _pdfController.jumpToPage(
-        progress.currentPage,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      _pdfController.jumpToPage(progress.currentPage);
     }
   }
 
@@ -95,11 +91,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
   void _goToPage(int page) {
     final total = ref.read(totalPagesProvider(widget.filePath));
     if (page >= 1 && page <= total) {
-      _pdfController.jumpToPage(
-        page,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      _pdfController.jumpToPage(page);
     }
   }
 
