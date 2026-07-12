@@ -5,7 +5,7 @@ import '../../data/repositories/annotation_repository.dart';
 import '../../domain/entities/annotation_model.dart';
 
 // Active annotation tool
-enum AnnotationTool { none, highlight, note, drawing, eraser }
+enum AnnotationTool { none, highlight, note, drawing, eraser, underline, strikethrough }
 
 final activeToolProvider = StateProvider<AnnotationTool>(
     (ref) => AnnotationTool.none);
@@ -43,6 +43,7 @@ class AnnotationNotifier extends StateNotifier<AsyncValue<void>> {
     required Rect rect,
     required Size pageSize,
     String? selectedText,
+    String type = 'highlight',
   }) async {
     final color = _ref.read(activeColorProvider);
     await _repo.addHighlight(
@@ -52,6 +53,7 @@ class AnnotationNotifier extends StateNotifier<AsyncValue<void>> {
       pageSize: pageSize,
       color: color,
       selectedText: selectedText,
+      type: type,
     );
     _ref.invalidate(pageAnnotationsProvider((filePath: filePath, page: page)));
     _ref.invalidate(fileAnnotationsProvider(filePath));
@@ -99,6 +101,12 @@ class AnnotationNotifier extends StateNotifier<AsyncValue<void>> {
 
   Future<void> delete(int id, String filePath, int page) async {
     await _repo.delete(id);
+    _ref.invalidate(pageAnnotationsProvider((filePath: filePath, page: page)));
+    _ref.invalidate(fileAnnotationsProvider(filePath));
+  }
+
+  Future<void> clearPage({required String filePath, required int page}) async {
+    await _repo.deleteAllForPage(filePath, page);
     _ref.invalidate(pageAnnotationsProvider((filePath: filePath, page: page)));
     _ref.invalidate(fileAnnotationsProvider(filePath));
   }

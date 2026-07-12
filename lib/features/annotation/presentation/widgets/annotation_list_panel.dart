@@ -106,6 +106,16 @@ class _AnnotationTile extends StatelessWidget {
         typeLabel = 'Nota';
         preview = annotation.content ?? '';
         break;
+      case 'underline':
+        icon = Icons.format_underlined;
+        typeLabel = 'Garis Bawah';
+        preview = annotation.selectedText ?? '(tiada teks dipilih)';
+        break;
+      case 'strikethrough':
+        icon = Icons.strikethrough_s;
+        typeLabel = 'Coret';
+        preview = annotation.selectedText ?? '(tiada teks dipilih)';
+        break;
       default:
         icon = Icons.draw_outlined;
         typeLabel = 'Lukisan';

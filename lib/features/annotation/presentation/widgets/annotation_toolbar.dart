@@ -5,7 +5,21 @@ import '../../domain/entities/annotation_model.dart';
 import '../../domain/usecases/annotation_provider.dart';
 
 class AnnotationToolbar extends ConsumerWidget {
-  const AnnotationToolbar({super.key});
+  final String filePath;
+  final int page;
+
+  const AnnotationToolbar({
+    super.key,
+    required this.filePath,
+    required this.page,
+  });
+
+  static const _overflowTools = {
+    AnnotationTool.note,
+    AnnotationTool.drawing,
+    AnnotationTool.underline,
+    AnnotationTool.strikethrough,
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -33,27 +47,16 @@ class AnnotationToolbar extends ConsumerWidget {
                     ? AnnotationTool.none
                     : AnnotationTool.highlight,
           ),
-          // Note tool
+          // Eraser tool
           _ToolButton(
-            icon: Icons.sticky_note_2_outlined,
-            label: 'Nota',
-            active: activeTool == AnnotationTool.note,
+            icon: Icons.auto_fix_off,
+            label: 'Pemadam',
+            active: activeTool == AnnotationTool.eraser,
             color: activeColor,
             onTap: () => ref.read(activeToolProvider.notifier).state =
-                activeTool == AnnotationTool.note
+                activeTool == AnnotationTool.eraser
                     ? AnnotationTool.none
-                    : AnnotationTool.note,
-          ),
-          // Drawing tool
-          _ToolButton(
-            icon: Icons.draw_outlined,
-            label: 'Lukis',
-            active: activeTool == AnnotationTool.drawing,
-            color: activeColor,
-            onTap: () => ref.read(activeToolProvider.notifier).state =
-                activeTool == AnnotationTool.drawing
-                    ? AnnotationTool.none
-                    : AnnotationTool.drawing,
+                    : AnnotationTool.eraser,
           ),
           // Color picker
           GestureDetector(
@@ -71,14 +74,104 @@ class AnnotationToolbar extends ConsumerWidget {
           // Stroke width (for drawing)
           if (activeTool == AnnotationTool.drawing)
             _StrokeSlider(),
-          // Clear all
-          IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            tooltip: 'Padam semua anotasi halaman ini',
-            onPressed: () => _confirmClear(context, ref),
+          // Overflow: Nota, Lukis, Garis Bawah, Coret, Padam semua
+          _ToolButton(
+            icon: Icons.more_horiz,
+            label: 'Lagi',
+            active: _overflowTools.contains(activeTool),
+            color: activeColor,
+            onTap: () => _showMoreTools(context, ref, activeTool),
           ),
         ],
       ),
+    );
+  }
+
+  void _showMoreTools(
+      BuildContext context, WidgetRef ref, AnnotationTool activeTool) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            _buildToolTile(
+              context: ctx,
+              ref: ref,
+              icon: Icons.sticky_note_2_outlined,
+              label: 'Nota',
+              tool: AnnotationTool.note,
+              activeTool: activeTool,
+            ),
+            _buildToolTile(
+              context: ctx,
+              ref: ref,
+              icon: Icons.draw_outlined,
+              label: 'Lukis',
+              tool: AnnotationTool.drawing,
+              activeTool: activeTool,
+            ),
+            _buildToolTile(
+              context: ctx,
+              ref: ref,
+              icon: Icons.format_underlined,
+              label: 'Garis Bawah',
+              tool: AnnotationTool.underline,
+              activeTool: activeTool,
+            ),
+            _buildToolTile(
+              context: ctx,
+              ref: ref,
+              icon: Icons.strikethrough_s,
+              label: 'Coret',
+              tool: AnnotationTool.strikethrough,
+              activeTool: activeTool,
+            ),
+            const Divider(),
+            ListTile(
+              leading:
+                  const Icon(Icons.delete_sweep_outlined, color: Colors.red),
+              title: const Text('Padam semua anotasi halaman ini',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmClear(context, ref);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolTile({
+    required BuildContext context,
+    required WidgetRef ref,
+    required IconData icon,
+    required String label,
+    required AnnotationTool tool,
+    required AnnotationTool activeTool,
+  }) {
+    final isActive = activeTool == tool;
+    final primary = Theme.of(context).colorScheme.primary;
+    return ListTile(
+      leading: Icon(icon, color: isActive ? primary : null),
+      title: Text(label, style: TextStyle(color: isActive ? primary : null)),
+      trailing: isActive ? Icon(Icons.check, color: primary) : null,
+      onTap: () {
+        Navigator.pop(context);
+        ref.read(activeToolProvider.notifier).state =
+            isActive ? AnnotationTool.none : tool;
+      },
     );
   }
 
@@ -153,7 +246,9 @@ class AnnotationToolbar extends ConsumerWidget {
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               Navigator.pop(ctx);
-              // Signal to parent — handled via provider invalidation
+              ref
+                  .read(annotationNotifierProvider.notifier)
+                  .clearPage(filePath: filePath, page: page);
             },
             child: const Text('Padam'),
           ),

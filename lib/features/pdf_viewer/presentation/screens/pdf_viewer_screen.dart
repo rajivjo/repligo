@@ -259,7 +259,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const AnnotationToolbar(),
+                AnnotationToolbar(filePath: widget.filePath, page: currentPage),
                 if (totalPages > 0)
                   ViewerBottomBar(
                     currentPage: currentPage,

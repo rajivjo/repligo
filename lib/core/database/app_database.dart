@@ -69,6 +69,11 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteAllAnnotationsForFile(String filePath) =>
       (delete(annotations)..where((a) => a.filePath.equals(filePath))).go();
 
+  Future<int> deleteAllAnnotationsForPage(String filePath, int page) =>
+      (delete(annotations)
+            ..where((a) => a.filePath.equals(filePath) & a.pageNumber.equals(page)))
+          .go();
+
   Future<List<Bookmark>> getBookmarksForFile(String filePath) =>
       (select(bookmarks)
             ..where((b) => b.filePath.equals(filePath))

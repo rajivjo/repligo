@@ -25,12 +25,13 @@ class AnnotationRepository {
     required Size pageSize,
     required Color color,
     String? selectedText,
+    String type = 'highlight',
   }) {
     final norm = NormRect.fromRect(rect, pageSize);
     return _db.insertAnnotation(AnnotationsCompanion.insert(
       filePath: filePath,
       pageNumber: page,
-      type: 'highlight',
+      type: type,
       color: Value(AnnotationColor.toHex(color)),
       x: norm.x,
       y: norm.y,
@@ -89,4 +90,7 @@ class AnnotationRepository {
 
   Future<int> deleteAllForFile(String filePath) =>
       _db.deleteAllAnnotationsForFile(filePath);
+
+  Future<int> deleteAllForPage(String filePath, int page) =>
+      _db.deleteAllAnnotationsForPage(filePath, page);
 }

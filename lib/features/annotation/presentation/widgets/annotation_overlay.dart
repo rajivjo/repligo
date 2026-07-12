@@ -21,6 +21,38 @@ class AnnotationOverlay extends ConsumerStatefulWidget {
   ConsumerState<AnnotationOverlay> createState() => _AnnotationOverlayState();
 }
 
+bool _isRectTool(AnnotationTool tool) =>
+    tool == AnnotationTool.highlight ||
+    tool == AnnotationTool.underline ||
+    tool == AnnotationTool.strikethrough;
+
+String _typeForTool(AnnotationTool tool) {
+  switch (tool) {
+    case AnnotationTool.underline:
+      return 'underline';
+    case AnnotationTool.strikethrough:
+      return 'strikethrough';
+    default:
+      return 'highlight';
+  }
+}
+
+/// Returns annotations whose hit region contains [position], ordered the
+/// same as [annotations] (last item = topmost, matching paint order).
+List<Annotation> _hitTestAnnotations(
+    Offset position, List<Annotation> annotations, Size pageSize) {
+  final hits = <Annotation>[];
+  for (final ann in annotations) {
+    final rect =
+        NormRect(ann.x, ann.y, ann.width, ann.height).toRect(pageSize);
+    final isHit = ann.type == 'note'
+        ? (position - rect.center).distanceSquared <= 16 * 16
+        : rect.contains(position);
+    if (isHit) hits.add(ann);
+  }
+  return hits;
+}
+
 class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
   // Drawing state
   List<Offset> _currentStroke = [];
@@ -28,15 +60,27 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
   Offset? _dragStart;
   Offset? _dragCurrent;
 
+  // Eraser state
+  List<Annotation>? _eraserSnapshot;
+  final Set<int> _erasedThisDrag = {};
+
   void _onPanStart(DragStartDetails d) {
     final tool = ref.read(activeToolProvider);
     if (tool == AnnotationTool.drawing) {
       setState(() => _currentStroke = [d.localPosition]);
-    } else if (tool == AnnotationTool.highlight) {
+    } else if (_isRectTool(tool)) {
       setState(() {
         _dragStart = d.localPosition;
         _dragCurrent = d.localPosition;
       });
+    } else if (tool == AnnotationTool.eraser) {
+      _eraserSnapshot = ref
+              .read(pageAnnotationsProvider(
+                  (filePath: widget.filePath, page: widget.pageNumber)))
+              .valueOrNull ??
+          [];
+      _erasedThisDrag.clear();
+      _eraseAt(d.localPosition);
     }
   }
 
@@ -44,9 +88,25 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
     final tool = ref.read(activeToolProvider);
     if (tool == AnnotationTool.drawing) {
       setState(() => _currentStroke.add(d.localPosition));
-    } else if (tool == AnnotationTool.highlight) {
+    } else if (_isRectTool(tool)) {
       setState(() => _dragCurrent = d.localPosition);
+    } else if (tool == AnnotationTool.eraser) {
+      _eraseAt(d.localPosition);
     }
+  }
+
+  void _eraseAt(Offset position) {
+    final snapshot = _eraserSnapshot;
+    if (snapshot == null) return;
+    final candidates =
+        snapshot.where((a) => !_erasedThisDrag.contains(a.id)).toList();
+    final hits = _hitTestAnnotations(position, candidates, widget.pageSize);
+    if (hits.isEmpty) return;
+    final target = hits.last;
+    _erasedThisDrag.add(target.id);
+    ref
+        .read(annotationNotifierProvider.notifier)
+        .delete(target.id, widget.filePath, widget.pageNumber);
   }
 
   Future<void> _onPanEnd(DragEndDetails d) async {
@@ -75,7 +135,7 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
         _currentStroke = [];
         _completedStrokes = [];
       });
-    } else if (tool == AnnotationTool.highlight &&
+    } else if (_isRectTool(tool) &&
         _dragStart != null &&
         _dragCurrent != null) {
       final rect = Rect.fromPoints(_dragStart!, _dragCurrent!);
@@ -85,12 +145,16 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
           page: widget.pageNumber,
           rect: rect,
           pageSize: widget.pageSize,
+          type: _typeForTool(tool),
         );
       }
       setState(() {
         _dragStart = null;
         _dragCurrent = null;
       });
+    } else if (tool == AnnotationTool.eraser) {
+      _eraserSnapshot = null;
+      _erasedThisDrag.clear();
     }
   }
 
@@ -109,7 +173,9 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
         onPanStart: tool != AnnotationTool.none ? _onPanStart : null,
         onPanUpdate: tool != AnnotationTool.none ? _onPanUpdate : null,
         onPanEnd: tool != AnnotationTool.none ? _onPanEnd : null,
-        onTapUp: tool == AnnotationTool.note ? _onTapForNote : null,
+        onTapUp: tool == AnnotationTool.note
+            ? _onTapForNote
+            : (tool == AnnotationTool.eraser ? _onTapForEraser : null),
         child: CustomPaint(
           painter: _AnnotationPainter(
             annotations: annotationsAsync.valueOrNull ?? [],
@@ -138,6 +204,20 @@ class _AnnotationOverlayState extends ConsumerState<AnnotationOverlay> {
           pageSize: widget.pageSize,
           content: content,
         );
+  }
+
+  void _onTapForEraser(TapUpDetails d) {
+    final annotations = ref
+            .read(pageAnnotationsProvider(
+                (filePath: widget.filePath, page: widget.pageNumber)))
+            .valueOrNull ??
+        [];
+    final hits = _hitTestAnnotations(d.localPosition, annotations, widget.pageSize);
+    if (hits.isEmpty) return;
+    final target = hits.last;
+    ref
+        .read(annotationNotifierProvider.notifier)
+        .delete(target.id, widget.filePath, widget.pageNumber);
   }
 
   Future<String?> _showNoteDialog() {
@@ -210,6 +290,10 @@ class _AnnotationPainter extends CustomPainter {
 
       if (ann.type == 'highlight') {
         canvas.drawRect(rect, Paint()..color = color.withOpacity(0.35));
+      } else if (ann.type == 'underline') {
+        _drawMarkupLine(canvas, rect, color, strikethrough: false);
+      } else if (ann.type == 'strikethrough') {
+        _drawMarkupLine(canvas, rect, color, strikethrough: true);
       } else if (ann.type == 'note') {
         final center = rect.center;
         canvas.drawCircle(center, 12, Paint()..color = color.withOpacity(0.8));
@@ -224,18 +308,24 @@ class _AnnotationPainter extends CustomPainter {
       }
     }
 
-    // Live highlight drag
-    if (activeTool == AnnotationTool.highlight &&
-        dragStart != null &&
-        dragCurrent != null) {
+    // Live rect-tool drag preview
+    if (dragStart != null && dragCurrent != null) {
       final rect = Rect.fromPoints(dragStart!, dragCurrent!);
-      canvas.drawRect(rect, Paint()..color = strokeColor.withOpacity(0.35));
-      canvas.drawRect(
-          rect,
-          Paint()
-            ..color = strokeColor
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1);
+      if (activeTool == AnnotationTool.highlight) {
+        canvas.drawRect(rect, Paint()..color = strokeColor.withOpacity(0.35));
+        canvas.drawRect(
+            rect,
+            Paint()
+              ..color = strokeColor
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1);
+      } else if (activeTool == AnnotationTool.underline) {
+        _drawMarkupLine(canvas, rect, strokeColor.withOpacity(0.6),
+            strikethrough: false);
+      } else if (activeTool == AnnotationTool.strikethrough) {
+        _drawMarkupLine(canvas, rect, strokeColor.withOpacity(0.6),
+            strikethrough: true);
+      }
     }
 
     // Live drawing strokes
@@ -252,6 +342,21 @@ class _AnnotationPainter extends CustomPainter {
     if (currentStroke.length > 1) {
       _drawStroke(canvas, currentStroke, drawPaint);
     }
+  }
+
+  void _drawMarkupLine(Canvas canvas, Rect rect, Color color,
+      {required bool strikethrough}) {
+    final y = strikethrough
+        ? rect.top + rect.height / 2
+        : rect.bottom - (rect.height * 0.08).clamp(1.0, 4.0);
+    canvas.drawLine(
+      Offset(rect.left, y),
+      Offset(rect.right, y),
+      Paint()
+        ..color = color
+        ..strokeWidth = (rect.height * 0.06).clamp(1.5, 3.0)
+        ..strokeCap = StrokeCap.round,
+    );
   }
 
   void _drawStroke(Canvas canvas, List<Offset> points, Paint paint) {

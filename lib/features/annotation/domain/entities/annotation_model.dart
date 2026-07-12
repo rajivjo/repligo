@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-enum AnnotationType { highlight, note, drawing }
+enum AnnotationType { highlight, note, drawing, underline, strikethrough }
 
 class AnnotationColor {
   static const yellow = Color(0xFFFFEB3B);
